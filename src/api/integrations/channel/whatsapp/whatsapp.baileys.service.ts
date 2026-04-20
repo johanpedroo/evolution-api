@@ -2338,7 +2338,14 @@ export class BaileysStartupService extends ChannelStartupService {
         }
       }
 
-      const linkPreview = options?.linkPreview != false ? undefined : false;
+      // Forked patch (v2.3.7-lp): override tem prioridade. Se o caller
+      // passou um objeto WAUrlInfo pronto, usa-o; senao, delega ao Baileys
+      // (undefined = auto-detect, false = desabilita).
+      const linkPreview: any = options?.linkPreviewOverride
+        ? options.linkPreviewOverride
+        : options?.linkPreview != false
+          ? undefined
+          : false;
 
       let quoted: WAMessage;
 
@@ -2633,6 +2640,31 @@ export class BaileysStartupService extends ChannelStartupService {
       throw new BadRequestException('Text is required');
     }
 
+    // Forked patch (v2.3.7-lp): monta WAUrlInfo se veio linkPreviewOverride
+    // (contorna Baileys link-preview que falha com shorteners)
+    let linkPreviewOverride: any = undefined;
+    if (data.linkPreviewOverride) {
+      const ov = data.linkPreviewOverride;
+      const urlMatch = text.match(/https?:\/\/\S+/i);
+      if (urlMatch) {
+        linkPreviewOverride = {
+          'matched-text': urlMatch[0],
+          matchedText: urlMatch[0],
+          'canonical-url': ov.canonicalUrl ?? urlMatch[0],
+          canonicalUrl: ov.canonicalUrl ?? urlMatch[0],
+          title: ov.title,
+          description: ov.description,
+          ...(ov.thumbnailUrl && {
+            thumbnailUrl: ov.thumbnailUrl,
+            'thumbnail-url': ov.thumbnailUrl,
+          }),
+          ...(ov.jpegThumbnail && {
+            jpegThumbnail: Buffer.from(ov.jpegThumbnail, 'base64'),
+          }),
+        };
+      }
+    }
+
     return await this.sendMessageWithTyping(
       data.number,
       { conversation: data.text },
@@ -2641,6 +2673,7 @@ export class BaileysStartupService extends ChannelStartupService {
         presence: 'composing',
         quoted: data?.quoted,
         linkPreview: data?.linkPreview,
+        linkPreviewOverride,
         mentionsEveryOne: data?.mentionsEveryOne,
         mentioned: data?.mentioned,
       },
