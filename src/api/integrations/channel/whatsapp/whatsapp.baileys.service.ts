@@ -2640,28 +2640,57 @@ export class BaileysStartupService extends ChannelStartupService {
       throw new BadRequestException('Text is required');
     }
 
-    // Forked patch (v2.3.7-lp): monta WAUrlInfo se veio linkPreviewOverride
-    // (contorna Baileys link-preview que falha com shorteners)
+    // Forked patch (v2.3.7-lp): monta WAUrlInfo se veio linkPreviewOverride.
+    // v2.3.7.1: faz upload real da imagem via prepareWAMessageMedia pra ter
+    // highQualityThumbnail completo (directPath/mediaKey/...), fazendo WhatsApp
+    // renderizar como HERO CARD (imagem grande) em vez de thumbnail lateral.
     let linkPreviewOverride: any = undefined;
     if (data.linkPreviewOverride) {
       const ov = data.linkPreviewOverride;
       const urlMatch = text.match(/https?:\/\/\S+/i);
       if (urlMatch) {
-        linkPreviewOverride = {
+        const base: any = {
           'matched-text': urlMatch[0],
           matchedText: urlMatch[0],
           'canonical-url': ov.canonicalUrl ?? urlMatch[0],
           canonicalUrl: ov.canonicalUrl ?? urlMatch[0],
           title: ov.title,
           description: ov.description,
-          ...(ov.thumbnailUrl && {
-            thumbnailUrl: ov.thumbnailUrl,
-            'thumbnail-url': ov.thumbnailUrl,
-          }),
-          ...(ov.jpegThumbnail && {
-            jpegThumbnail: Buffer.from(ov.jpegThumbnail, 'base64'),
-          }),
         };
+
+        // Tenta upload pra ter hero card. Se falhar, fallback pra thumbnail simples.
+        const imgSource = ov.jpegThumbnail
+          ? Buffer.from(ov.jpegThumbnail, 'base64')
+          : ov.thumbnailUrl
+            ? { url: ov.thumbnailUrl }
+            : undefined;
+
+        if (imgSource) {
+          try {
+            const { imageMessage } = await prepareWAMessageMedia({ image: imgSource as any }, {
+              upload: this.client.waUploadToServer,
+              mediaTypeOverride: 'thumbnail-link' as any,
+            } as any);
+            if (imageMessage) {
+              base.jpegThumbnail = imageMessage.jpegThumbnail
+                ? Buffer.from(imageMessage.jpegThumbnail as any)
+                : undefined;
+              base.highQualityThumbnail = imageMessage;
+            }
+          } catch (err) {
+            this.logger.warn(
+              `linkPreviewOverride: upload failed, falling back to simple thumbnail: ${err?.message ?? err}`,
+            );
+            if (ov.jpegThumbnail) {
+              base.jpegThumbnail = Buffer.from(ov.jpegThumbnail, 'base64');
+            } else if (ov.thumbnailUrl) {
+              base.thumbnailUrl = ov.thumbnailUrl;
+              base['thumbnail-url'] = ov.thumbnailUrl;
+            }
+          }
+        }
+
+        linkPreviewOverride = base;
       }
     }
 
