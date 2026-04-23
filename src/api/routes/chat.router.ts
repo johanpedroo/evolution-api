@@ -291,6 +291,13 @@ export class ChatRouter extends RouterBroker {
         });
 
         return res.status(HttpStatus.OK).json(response);
+      })
+      // Forked patch (v2.3.7-lp): resolve invite code -> JID do canal
+      .post(this.routerPath('newsletterMetadataFromInvite'), ...guards, async (req, res) => {
+        const instance = req.params as any;
+        const body = req.body ?? {};
+        const response = await chatController.newsletterMetadataFromInvite(instance, body);
+        return res.status(HttpStatus.OK).json(response);
       });
   }
 

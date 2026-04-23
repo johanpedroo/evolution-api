@@ -5198,6 +5198,32 @@ export class BaileysStartupService extends ChannelStartupService {
       },
     };
   }
+  /**
+   * Forked patch (v2.3.7-lp): resolve invite code de canal -> JID + metadata.
+   * Usa Baileys newsletterMetadata('invite', code) pra pegar JID real a partir
+   * do link https://whatsapp.com/channel/<inviteCode>. Essencial pra permitir
+   * envio em canais sem o usuario precisar enviar 1 msg manual primeiro.
+   */
+  public async newsletterMetadataFromInvite(inviteCode: string) {
+    if (!inviteCode || typeof inviteCode !== 'string') {
+      throw new BadRequestException('inviteCode required');
+    }
+    const code = inviteCode.trim().replace(/^https?:\/\/whatsapp\.com\/channel\//i, '');
+    try {
+      const metadata = await (this.client as any).newsletterMetadata('invite', code);
+      if (!metadata) {
+        throw new NotFoundException(`newsletter invite "${code}" not found`);
+      }
+      return metadata;
+    } catch (err) {
+      if (err instanceof BadRequestException || err instanceof NotFoundException) {
+        throw err;
+      }
+      this.logger.error(`newsletterMetadataFromInvite failed: ${err?.message}`);
+      throw new InternalServerErrorException(`newsletter metadata lookup failed: ${err?.message ?? err}`);
+    }
+  }
+
   public async fetchChannels(query: Query<Contact>) {
     const page = Number((query as any)?.page ?? 1);
     const limit = Number((query as any)?.limit ?? (query as any)?.rows ?? 50);
