@@ -126,4 +126,16 @@ export class ChatController {
   public async fetchChannels({ instanceName }: InstanceDto, query: Query<Contact>) {
     return await this.waMonitor.waInstances[instanceName].fetchChannels(query);
   }
+
+  /** Forked patch (v2.3.7-lp): resolve invite code -> JID + metadata */
+  public async newsletterMetadataFromInvite(
+    { instanceName }: InstanceDto,
+    data: { inviteCode?: string; code?: string; url?: string },
+  ) {
+    const invite = data.inviteCode ?? data.code ?? data.url;
+    if (!invite) {
+      throw new Error('body must include one of: inviteCode | code | url');
+    }
+    return await (this.waMonitor.waInstances[instanceName] as any).newsletterMetadataFromInvite(invite);
+  }
 }

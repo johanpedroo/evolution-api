@@ -5,11 +5,29 @@ export class Quoted {
   message: proto.IMessage;
 }
 
+/**
+ * Forked patch (ligge/evolution-api v2.3.7-lp): permite injetar preview
+ * de link pre-montado, contornando a lib de link-preview do Baileys que
+ * falha com shorteners (amzn.to, bit.ly, etc). O dispatcher resolve o
+ * shortener + scrape de og:* e envia estes campos prontos.
+ */
+export class LinkPreviewOverride {
+  title?: string;
+  description?: string;
+  /** URL canonica que o Baileys vai usar no card (sem trocar a URL do texto) */
+  canonicalUrl?: string;
+  /** URL da imagem de thumbnail; Baileys baixa e embute */
+  thumbnailUrl?: string;
+  /** Alternativa: base64 puro (sem prefixo data:) da thumbnail em JPEG */
+  jpegThumbnail?: string;
+}
+
 export class Options {
   delay?: number;
   presence?: WAPresence;
   quoted?: Quoted;
   linkPreview?: boolean;
+  linkPreviewOverride?: LinkPreviewOverride;
   encoding?: boolean;
   mentionsEveryOne?: boolean;
   mentioned?: string[];
@@ -42,6 +60,8 @@ export class Metadata {
   delay?: number;
   quoted?: Quoted;
   linkPreview?: boolean;
+  /** Patch fork: preview de link pre-montado (contorna Baileys com shorteners) */
+  linkPreviewOverride?: LinkPreviewOverride;
   mentionsEveryOne?: boolean;
   mentioned?: string[];
   encoding?: boolean;

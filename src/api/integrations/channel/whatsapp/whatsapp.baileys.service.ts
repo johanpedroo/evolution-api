@@ -2577,12 +2577,14 @@ export class BaileysStartupService extends ChannelStartupService {
         }
       }
 
-      const linkPreview = options?.linkPreview === false ? false : undefined;
-
-      let previewContext: any = undefined;
-      if (linkPreview !== false && (message as any)?.conversation) {
-        previewContext = await this.generateLinkPreview((message as any).conversation);
-      }
+      // Forked patch (v2.3.7-lp): override tem prioridade. Se o caller
+      // passou um objeto WAUrlInfo pronto, usa-o; senao, delega ao Baileys
+      // (undefined = auto-detect, false = desabilita).
+      const linkPreview: any = options?.linkPreviewOverride
+        ? options.linkPreviewOverride
+        : options?.linkPreview != false
+          ? undefined
+          : false;
 
       let quoted: WAMessage;
 
@@ -2880,6 +2882,60 @@ export class BaileysStartupService extends ChannelStartupService {
       throw new BadRequestException('Text is required');
     }
 
+    // Forked patch (v2.3.7-lp): monta WAUrlInfo se veio linkPreviewOverride.
+    // v2.3.7.1: faz upload real da imagem via prepareWAMessageMedia pra ter
+    // highQualityThumbnail completo (directPath/mediaKey/...), fazendo WhatsApp
+    // renderizar como HERO CARD (imagem grande) em vez de thumbnail lateral.
+    let linkPreviewOverride: any = undefined;
+    if (data.linkPreviewOverride) {
+      const ov = data.linkPreviewOverride;
+      const urlMatch = text.match(/https?:\/\/\S+/i);
+      if (urlMatch) {
+        const base: any = {
+          'matched-text': urlMatch[0],
+          matchedText: urlMatch[0],
+          'canonical-url': ov.canonicalUrl ?? urlMatch[0],
+          canonicalUrl: ov.canonicalUrl ?? urlMatch[0],
+          title: ov.title,
+          description: ov.description,
+        };
+
+        // Tenta upload pra ter hero card. Se falhar, fallback pra thumbnail simples.
+        const imgSource = ov.jpegThumbnail
+          ? Buffer.from(ov.jpegThumbnail, 'base64')
+          : ov.thumbnailUrl
+            ? { url: ov.thumbnailUrl }
+            : undefined;
+
+        if (imgSource) {
+          try {
+            const { imageMessage } = await prepareWAMessageMedia({ image: imgSource as any }, {
+              upload: this.client.waUploadToServer,
+              mediaTypeOverride: 'thumbnail-link' as any,
+            } as any);
+            if (imageMessage) {
+              base.jpegThumbnail = imageMessage.jpegThumbnail
+                ? Buffer.from(imageMessage.jpegThumbnail as any)
+                : undefined;
+              base.highQualityThumbnail = imageMessage;
+            }
+          } catch (err) {
+            this.logger.warn(
+              `linkPreviewOverride: upload failed, falling back to simple thumbnail: ${err?.message ?? err}`,
+            );
+            if (ov.jpegThumbnail) {
+              base.jpegThumbnail = Buffer.from(ov.jpegThumbnail, 'base64');
+            } else if (ov.thumbnailUrl) {
+              base.thumbnailUrl = ov.thumbnailUrl;
+              base['thumbnail-url'] = ov.thumbnailUrl;
+            }
+          }
+        }
+
+        linkPreviewOverride = base;
+      }
+    }
+
     return await this.sendMessageWithTyping(
       data.number,
       { conversation: data.text },
@@ -2888,6 +2944,7 @@ export class BaileysStartupService extends ChannelStartupService {
         presence: 'composing',
         quoted: data?.quoted,
         linkPreview: data?.linkPreview,
+        linkPreviewOverride,
         mentionsEveryOne: data?.mentionsEveryOne,
         mentioned: data?.mentioned,
         messageId: data?.messageId,
@@ -5860,5 +5917,30 @@ export class BaileysStartupService extends ChannelStartupService {
       limit,
       records,
     };
+  }
+  /**
+   * Forked patch (v2.3.7-lp): resolve invite code de canal -> JID + metadata.
+   * Usa Baileys newsletterMetadata('invite', code) pra pegar JID real a partir
+   * do link https://whatsapp.com/channel/<inviteCode>. Essencial pra permitir
+   * envio em canais sem o usuario precisar enviar 1 msg manual primeiro.
+   */
+  public async newsletterMetadataFromInvite(inviteCode: string) {
+    if (!inviteCode || typeof inviteCode !== 'string') {
+      throw new BadRequestException('inviteCode required');
+    }
+    const code = inviteCode.trim().replace(/^https?:\/\/whatsapp\.com\/channel\//i, '');
+    try {
+      const metadata = await (this.client as any).newsletterMetadata('invite', code);
+      if (!metadata) {
+        throw new NotFoundException(`newsletter invite "${code}" not found`);
+      }
+      return metadata;
+    } catch (err) {
+      if (err instanceof BadRequestException || err instanceof NotFoundException) {
+        throw err;
+      }
+      this.logger.error(`newsletterMetadataFromInvite failed: ${err?.message}`);
+      throw new InternalServerErrorException(`newsletter metadata lookup failed: ${err?.message ?? err}`);
+    }
   }
 }

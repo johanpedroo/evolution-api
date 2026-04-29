@@ -72,6 +72,17 @@ export const textMessageSchema: JSONSchema7 = {
     number: { ...numberDefinition },
     text: { type: 'string' },
     linkPreview: { type: 'boolean' },
+    // Forked patch (v2.3.7-lp): preview de link pre-montado pra shorteners
+    linkPreviewOverride: {
+      type: 'object',
+      properties: {
+        title: { type: 'string' },
+        description: { type: 'string' },
+        canonicalUrl: { type: 'string' },
+        thumbnailUrl: { type: 'string' },
+        jpegThumbnail: { type: 'string' },
+      },
+    },
     delay: {
       type: 'integer',
       description: 'Enter a value in milliseconds',
