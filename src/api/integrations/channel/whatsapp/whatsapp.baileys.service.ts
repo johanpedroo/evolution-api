@@ -2603,6 +2603,11 @@ export class BaileysStartupService extends ChannelStartupService {
       let mentions: string[];
       let contextInfo: any;
 
+      // Forked patch (v2.3.7-lp): contextInfo derivado do linkPreviewOverride
+      const previewContext: any = options?.linkPreviewOverride
+        ? { externalAdReply: options.linkPreviewOverride }
+        : undefined;
+
       if (isJidGroup(sender)) {
         let group;
         try {
